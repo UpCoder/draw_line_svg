@@ -19,4 +19,7 @@ from googlechart import views
 urlpatterns = [
     url(r'show_chart/$', views.show_chart),
     url(r'update_data/$', views.update_data),
+    url(r'show_attributes/$', views.show_attributes),
+    url(r'get_show_data/$', views.get_show_data),
+    url(r'example_download/$', views.file_download),
 ]

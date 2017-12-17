@@ -1,6 +1,8 @@
 <html>
   <head>
       <script type="text/javascript" src="/static/js/jquery.js"></script>
+      <script type="text/javascript" src="/static/js/ajaxfileupload.js"></script>
+      <script type="text/javascript" src="/static/js/FileSaver.min.js"></script>
       <link rel="stylesheet" type="text/css" href="/static/css/base.css" />
       <link rel="stylesheet" type="text/css" href="/static/css/bootstrap.min.css"/>
       <link rel="stylesheet" type="text/css" href="/static/js/jstree/dist/themes/default/style.min.css"/>
@@ -8,75 +10,45 @@
 
       <!--Load the AJAX API-->
     <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
-
-    <script type="text/javascript">
-      // Load the Visualization API and the corechart package.
-      google.charts.load('current', {'packages':['corechart']});
-
-      // Set a callback to run when the Google Visualization API is loaded.
-      google.charts.setOnLoadCallback(drawChart);
-
-      // Callback that creates and populates a data table,
-      // instantiates the pie chart, passes in the data and
-      // draws it.
-      function drawChart() {
-
-        // Create the data table.
-{#        var data = new google.visualization.DataTable();#}
-{#        data.addColumn('string', 'Topping');#}
-{#        data.addColumn('number', 'Slices');#}
-{#        data.addRows([#}
-{#          ['Mushrooms', 3],#}
-{#          ['Onions', 1],#}
-{#          ['Olives', 1],#}
-{#          ['Zucchini', 1],#}
-{#          ['Pepperoni', 2]#}
-{#        ]);#}
-{##}
-{#        // Set chart options#}
-{#        var options = {'title':'How Much Pizza I Ate Last Night',#}
-{#                       'width':400,#}
-{#                       'height':300};#}
-{##}
-{#        // Instantiate and draw our chart, passing in some options.#}
-{#        var chart = new google.visualization.PieChart(document.getElementById('chart_div'));#}
-{#        chart.draw(data, options);#}
-
-      }
-    </script>
-
-
       <script>
           $().ready(function () {
+              // 用户选择要画的属性后，调用Ｇｏｏｇｌｅ的接口，显示出图形（生成svg标签）
+              var attributes = null;
+              var saved_name = null;
               $('#update_btn').click(function () {
-                  $.ajax(
-                      {
-                          url: 'https://www.google.com/jsapi?callback',
-                          cache: true,
-                          dataType: 'script',
-                          success: function () {
-                              google.load('visualization', '1', {packages:['corechart'], 'callback' : function () {
-                                  $.ajax({
-                                        url:'/google_chart/update_data/',
-                                        type:'GET',
-                                        processData: false,
-                                        contentType: false,
-                                        success:function (data) {
-                                            var train_data = data.data['train_data'];
-                                            var val_data = data.data['val_data'];
-                                            var train_name = data.data['train_name'];
-                                            var val_name = data.data['val_name'];
-                                            var chart_data = [];
-                                            for(var i=0;i<train_data.length;i++)
-                                            {
-                                                chart_data.push([i, train_data[i], val_data[i]]);
-                                            }
-                                            alert(train_name + ' | ' + val_name);
+                  var formData = new FormData($('form')[0]);
+                  if(attributes != null){
+                      formData.append('has_attributes', true)
+                      for(var i=0;i<attributes.length;i++){
+                          formData.append('attribute:' + attributes[i], $('#checkbox_' + i).is(':checked'))
+                      }
+                  }else{
+                      formData.append('has_attributes', false)
+                  }
+                  var show_data = null;
+                  $.ajax({
+                      url:'/google_chart/get_show_data/',
+                      type:'POST',
+                      data: formData,
+                      processData:false,
+                      contentType: false,
+                      success:function (data) {
+                          show_data = data['data']['show_data'];
+                          var show_data_attributes = data['data']['attributes'];
+                          var axis = data['data']['axis'];
+                          $.ajax(
+                              {
+                                  url: 'https://www.google.com/jsapi?callback',
+                                  cache: true,
+                                  dataType: 'script',
+                                  success: function () {
+                                      google.load('visualization', '1', {packages:['corechart'], 'callback' : function () {
                                             var data = new google.visualization.DataTable();
                                             data.addColumn('number', 'step');
-                                            data.addColumn('number', train_name);
-                                            data.addColumn('number', val_name);
-                                            data.addRows(chart_data);
+                                            for(var i=0;i<show_data_attributes.length;i++){
+                                                data.addColumn('number', show_data_attributes[i])
+                                            }
+                                            data.addRows(show_data);
                                             var options = {
                                                 'width':400,
                                                 'height':300,
@@ -90,53 +62,68 @@
                                             // Instantiate and draw our chart, passing in some options.
                                             var chart = new google.visualization.LineChart(document.getElementById('chart_div'));
                                             chart.draw(data, options);
-                                        }
-                                  })
-                              }});
+
+                                      }});
+                                  }
+                              }
+                          )
+                      },
+                      error: function (error) {
+                          console.error(error['message']);
+                      }
+                  });
+
+              });
+              $('#show_attributes_btn').click(function () {
+                  // 将将要画文件的属性显示出来，一般都在文件的第一行
+                  var formData = new FormData($('form')[0]);
+                  $('#selecte_attributes_div').empty();
+                  $.ajax(
+                      {
+                          url:'/google_chart/show_attributes/',
+                          type: 'POST',
+                          data: formData,
+                          processData: false,
+                          contentType: false,
+                          success: function (data) {
+                              attributes = data['data']['attributes'];
+                              saved_name = data['data']['saved_name'];
+                              $('#saved_name').val(saved_name);
+                              for(var i=0;i<attributes.length;i++)
+                              {
+                                  console.log(attributes[i]);
+                                  var insertd_element = '<label><input type="checkbox" checked="checked" id="checkbox_' + i +'"/>' + attributes[i] +'</label>';
+                                  $('#selecte_attributes_div').append($(insertd_element))
+                              }
+                              alert(data['data']['attributes'])
+                          },
+                          error: function (error) {
+                              alert(error)
                           }
                       }
-                  )
+                  );
               });
-{#              $('#update_btn').click(function () {#}
-{#                  $.ajax(#}
-{#                      {#}
-{#                        url:'/google_chart/update_data/',#}
-{#                        type:'GET',#}
-{#                        processData: false,#}
-{#                        contentType: false,#}
-{#                        success:function(data){#}
-{#                            if(data.message == 'success'){#}
-{#                                var train_data = data.data['train_data'];#}
-{#                                var val_data = data.data['val_data'];#}
-{#                                var train_name = data.data['train_name'];#}
-{#                                var val_name = data.data['val_name'];#}
-{#                                var chart_data = [];#}
-{#                                for(var i=0;i<train_data.length;i++)#}
-{#                                {#}
-{#                                    chart_data.push([i, train_data[i], val_data[i]]);#}
-{#                                }#}
-{#                                alert(train_name + ' | ' + val_name);#}
-{#                                var data = new google.visualization.DataTable();#}
-{#                                data.addColumn('number', train_name);#}
-{#                                data.addColumn('number', val_name);#}
-{#                                data.addRows(chart_data);#}
-{#                                var options = {#}
-{#                                    'width':400,#}
-{#                                    'height':300#}
-{#                                };#}
-{##}
-{#                                // Instantiate and draw our chart, passing in some options.#}
-{#                                var chart = new google.visualization.PieChart(document.getElementById('chart_div'));#}
-{#                                chart.draw(data, options);#}
-{#                            }#}
-{#                        },#}
-{#                        error:function(error){#}
-{#                            alert('error');#}
-{#                            alert(JSON.stringify(error))#}
-{#                        }#}
-{#                      }#}
-{#                  )#}
-{#              });#}
+              $('#save_as_svg').click(function (event) {
+                  var svg_content = $('svg').prop('outerHTML');
+                  var blob = new Blob([svg_content], {type: "text/plain;charset=utf-8"});
+                  saveAs(blob, $('#saved_file_name').val() + '.svg');
+                  event.stopPropagation();
+                  return false;
+              });
+              $('#example_download_btn').click(function () {
+                  $.ajax({
+                      url:'/google_chart/example_download/',
+                      method:'POST',
+                      success:function (data) {
+                          console.log(data);
+                          var blob = new Blob([data], {type: "text/plain;charset=utf-8"});
+                          saveAs(blob, 'example.txt');
+                      },
+                      error: function (error) {
+                          console.log(error)
+                      }
+                  })
+              })
           })
       </script>
   </head>
@@ -146,8 +133,15 @@
         <div class="panel-heading">生成折线图</div>
         <div class="panel-body">
             <div>
-                <input type="file" name="data_file" id="data_file" style="float: left"/>
-                <button class="btn btn-info" data-toggle="modal" data-target="#myModal">
+                <form id="update_file_form" enctype="multipart/form-data" method="post">
+                    {% csrf_token %}
+                    <input type="file" name="data_file" id="update_file_input"/>
+                    <input type="hidden" name="saved_name" id="saved_name"/>
+                    <div id="selecte_attributes_div">
+
+                    </div>
+                </form>
+                <button class="btn btn-warning" data-toggle="modal" data-target="#myModal">
                     格式说明
                 </button>
             </div>
@@ -159,6 +153,18 @@
             <button class="btn btn-success" id="update_btn">
                 update data
             </button>
+            <div>
+                <form class="form-inline" style="margin: 5px">
+                    <div class="form-group">
+                        <label for="saved_file_name" style="width: 100px;">The name of the svg file</label>
+                        <input type="text" class="form-control" id="saved_file_name" placeholder="svg">
+                        <button class="btn btn-default" id="save_as_svg">
+                            save as svg
+                        </button>
+                    </div>
+
+                </form>
+            </div>
         </div>
     </div>
     <!--Div that will hold the pie chart-->
@@ -176,9 +182,10 @@
       </div>
       <div class="modal-body">
         <ul>
-            <li>目前只支持txt 文件，元素之间的划分符号是逗号</li>
+            <li>目前只支持txt 文件，属性名之间的划分符号是逗号，值之间划分的符号是空格</li>
             <li>第一行是属性的名字，比如说index, loss value, accuracy value</li>
             <li>从第二行开始的第一列是横坐标的点</li>
+            <li><button id="example_download_btn" class="btn btn-sm btn-info">下载示例文件</button></li>
         </ul>
       </div>
       <div class="modal-footer">
